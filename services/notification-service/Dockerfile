@@ -3,7 +3,7 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
-COPY requirements.txt .
+COPY services/notification-service/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # ---- Runtime stage ----

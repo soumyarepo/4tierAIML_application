@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liblapack-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY services/fraud-service/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # ---- Runtime stage ----

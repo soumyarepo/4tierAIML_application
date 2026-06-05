@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY services/transaction-service/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # ------------------------------------------------------------------
