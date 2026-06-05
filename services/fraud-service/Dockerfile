@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application code
-COPY --chown=appuser:appgroup app/ ./app/
+COPY --chown=appuser:appgroup services/fraud-service/app/ ./app/
 
 # Ensure data directory exists for model persistence
 RUN mkdir -p /data && chown appuser:appgroup /data

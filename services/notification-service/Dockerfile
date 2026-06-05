@@ -17,7 +17,7 @@ WORKDIR /app
 COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application code
-COPY --chown=appuser:appgroup app/ ./app/
+COPY --chown=appuser:appgroup services/notification-service/app/ ./app/
 
 ENV PATH=/home/appuser/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1

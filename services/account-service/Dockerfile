@@ -29,7 +29,7 @@ COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy the shared library and application source
 COPY --chown=appuser:appgroup src/shared /app/src/shared
-COPY --chown=appuser:appgroup app /app/app
+COPY --chown=appuser:appgroup services/account-service/app /app/app
 
 # Set Python path so 'from shared' resolves correctly
 ENV PYTHONPATH=/app/src:${PYTHONPATH}
