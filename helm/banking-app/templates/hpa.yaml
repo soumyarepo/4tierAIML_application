@@ -13,7 +13,7 @@ HorizontalPodAutoscaler for each microservice where autoscaling is enabled.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ $serviceName }}-hpa
+  name: {{ $serviceName | kebabcase }}-hpa
   namespace: {{ $namespace }}
   labels:
     {{- include "banking-app.labels" $root | nindent 4 }}

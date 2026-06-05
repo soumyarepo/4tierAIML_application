@@ -10,7 +10,7 @@ Service resources for all 6 microservices.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $serviceName }}
+  name: {{ $serviceName | kebabcase }}
   namespace: {{ $namespace }}
   labels:
     app.kubernetes.io/name: {{ $serviceName }}
