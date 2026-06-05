@@ -413,3 +413,9 @@ ingress:
   tls:
     enabled: true
     secretName: banking-ingress-tls
+
+secrets:
+  jwtSecret: ""
+  postgresPassword: "bankpass"
+  mongoPassword: "bankpass"
+  redisPassword: "bankpass"
