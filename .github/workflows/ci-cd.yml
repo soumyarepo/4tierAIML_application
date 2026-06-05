@@ -1,4 +1,4 @@
-﻿name: CI/CD Pipeline
+﻿name: 4Tier CI/CD Pipeline
 
 on:
   push:
