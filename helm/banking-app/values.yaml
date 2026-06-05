@@ -2,7 +2,7 @@
 # Global defaults
 # =============================================================================
 global:
-  imageRegistry: ghcr.io
+  imageRegistry: docker.io
   imagePullSecrets: []
   storageClass: ""
   namespace: banking
@@ -36,7 +36,7 @@ gateway:
   enabled: true
   replicaCount: 2
   image:
-    repository: banking-gateway
+    repository: soumyakube/gateway
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
@@ -97,7 +97,7 @@ authService:
   enabled: true
   replicaCount: 2
   image:
-    repository: banking-auth-service
+    repository: soumyakube/auth-service
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
@@ -127,7 +127,7 @@ accountService:
   enabled: true
   replicaCount: 2
   image:
-    repository: banking-account-service
+    repository: soumyakube/account-service
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
@@ -151,7 +151,7 @@ transactionService:
   enabled: true
   replicaCount: 2
   image:
-    repository: banking-transaction-service
+    repository: soumyakube/transaction-service
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
@@ -179,7 +179,7 @@ fraudService:
   enabled: true
   replicaCount: 2
   image:
-    repository: banking-fraud-service
+    repository: soumyakube/fraud-service
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
@@ -201,7 +201,7 @@ notificationService:
   enabled: true
   replicaCount: 2
   image:
-    repository: banking-notification-service
+    repository: soumyakube/notification-service
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
