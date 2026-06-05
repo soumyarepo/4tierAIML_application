@@ -1,0 +1,15 @@
+apiVersion: v2
+name: banking-app
+description: Production-grade four-tier microservice AI banking application
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - banking
+  - microservices
+  - ai
+  - fraud-detection
+  - kubernetes
+maintainers:
+  - name: Parket AI Team
+    email: team@parket.ai

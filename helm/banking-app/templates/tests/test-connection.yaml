@@ -1,0 +1,51 @@
+{{/*
+Helm test pod — verifies that the gateway service is reachable after deployment.
+Run with: helm test banking-app
+*/}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: banking-app-test-connection
+  namespace: {{ .Values.global.namespace | default "banking" }}
+  labels:
+    {{- include "banking-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ include "banking-app.serviceAccountName" . }}
+  containers:
+    - name: curl
+      image: curlimages/curl:latest
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing gateway health endpoint..."
+          # Wait for gateway to be ready
+          for i in $(seq 1 30); do
+            if curl -sf http://gateway:8000/health; then
+              echo ""
+              echo "Gateway is healthy!"
+              exit 0
+            fi
+            echo "Waiting for gateway... attempt $i/30"
+            sleep 5
+          done
+          echo "ERROR: Gateway did not become healthy in time"
+          exit 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]

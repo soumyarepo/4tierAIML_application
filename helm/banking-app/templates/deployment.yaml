@@ -1,0 +1,136 @@
+{{/*
+Deployment template for all 6 microservices.
+Each service gets its own Deployment resource rendered from the same template.
+*/}}
+{{- $root := . }}
+{{- $namespace := .Values.global.namespace | default "banking" }}
+{{- $registry := .Values.global.imageRegistry }}
+{{- $saName := include "banking-app.serviceAccountName" . }}
+{{- range $serviceName, $svc := .Values }}
+{{-   if and (hasKey $svc "enabled") $svc.enabled }}
+{{-     if has $serviceName (list "gateway" "authService" "accountService" "transactionService" "fraudService" "notificationService") }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $serviceName }}
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $serviceName }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+    app.kubernetes.io/component: microservice
+spec:
+  replicas: {{ $svc.replicaCount | default 2 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $serviceName }}
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $serviceName }}
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: microservice
+        app.kubernetes.io/version: {{ $svc.image.tag | default "latest" }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ $svc.service.port }}"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ $saName }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: {{ $serviceName }}
+          image: "{{ $registry }}/{{ $svc.image.repository }}:{{ $svc.image.tag | default "latest" }}"
+          imagePullPolicy: {{ $svc.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.service.port }}
+              protocol: TCP
+          env:
+            {{/* Environment variables from values.yaml */}}
+            {{- range $env := $svc.env }}
+            - name: {{ $env.name }}
+              {{- if hasKey $env "value" }}
+              value: {{ $env.value | quote }}
+              {{- else if hasKey $env "valueFrom" }}
+              valueFrom:
+                {{- toYaml $env.valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{/* Secret references for common secrets */}}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: jwt-secret
+                  optional: true
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: postgres-password
+                  optional: true
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: mongo-password
+                  optional: true
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: redis-password
+                  optional: true
+          envFrom:
+            - configMapRef:
+                name: banking-configmap
+          resources:
+            requests:
+              cpu: {{ $svc.resources.requests.cpu | default "100m" }}
+              memory: {{ $svc.resources.requests.memory | default "128Mi" }}
+            limits:
+              cpu: {{ $svc.resources.limits.cpu | default "500m" }}
+              memory: {{ $svc.resources.limits.memory | default "512Mi" }}
+          livenessProbe:
+            httpGet:
+              path: {{ $svc.livenessProbe.httpGet.path | default "/health" }}
+              port: {{ $svc.livenessProbe.httpGet.port | default $svc.service.port }}
+            initialDelaySeconds: {{ $svc.livenessProbe.initialDelaySeconds | default 30 }}
+            periodSeconds: {{ $svc.livenessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: {{ $svc.readinessProbe.httpGet.path | default "/ready" }}
+              port: {{ $svc.readinessProbe.httpGet.port | default $svc.service.port }}
+            initialDelaySeconds: {{ $svc.readinessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ $svc.readinessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+      imagePullSecrets:
+        {{- range .Values.global.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+{{-   end }}
+{{- end }}
+{{- end }}
+{{- end }}

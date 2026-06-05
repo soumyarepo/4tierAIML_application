@@ -1,0 +1,582 @@
+{{/*
+Deployments/StatefulSets for stateless infrastructure:
+  - Redis (Deployment + Service)
+  - Kafka (StatefulSet + headless service)
+  - Zookeeper (StatefulSet + headless service)
+  - Prometheus (Deployment + Service + ConfigMap)
+  - Grafana (Deployment + Service)
+*/}}
+{{- $root := . }}
+{{- $namespace := .Values.global.namespace | default "banking" }}
+{{- $storageClass := .Values.global.storageClass | default "" }}
+
+{{/* ── Redis ──────────────────────────────────────────────────────────────── */}}
+{{- if .Values.redis.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: cache
+    spec:
+      serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)"]
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: redis-password
+                  optional: true
+          envFrom:
+            - configMapRef:
+                name: banking-configmap
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "-a", "$(REDIS_PASSWORD)", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "-a", "$(REDIS_PASSWORD)", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: cache
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}
+
+{{/* ── Kafka ──────────────────────────────────────────────────────────────── */}}
+{{- if .Values.kafka.enabled }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: message-broker
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+spec:
+  serviceName: kafka-headless
+  replicas: {{ .Values.kafka.replicaCount | default 3 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: message-broker
+    spec:
+      serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:7.5.0
+          ports:
+            - name: kafka-internal
+              containerPort: 29092
+              protocol: TCP
+            - name: kafka-external
+              containerPort: 9092
+              protocol: TCP
+          env:
+            - name: KAFKA_BROKER_ID
+              value: "$(POD_NUMBER)"
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: "zookeeper:2181"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: "PLAINTEXT://kafka-$(POD_NUMBER).kafka-headless:29092,PLAINTEXT_HOST://localhost:9092"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "true"
+            - name: POD_NUMBER
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: banking-configmap
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          livenessProbe:
+            exec:
+              command:
+                - kafka-broker-api-versions
+                - --bootstrap-server
+                - localhost:9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+        labels:
+          app.kubernetes.io/name: kafka
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.kafka.persistence.size | default "10Gi" }}
+        {{- if $storageClass }}
+        storageClassName: {{ $storageClass }}
+        {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: message-broker
+spec:
+  type: ClusterIP
+  ports:
+    - name: kafka-internal
+      port: 29092
+      targetPort: kafka-internal
+      protocol: TCP
+    - name: kafka-external
+      port: 9092
+      targetPort: kafka-external
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: message-broker
+spec:
+  clusterIP: None
+  ports:
+    - name: kafka-internal
+      port: 29092
+      targetPort: kafka-internal
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}
+
+{{/* ── Zookeeper ──────────────────────────────────────────────────────────── */}}
+{{- if .Values.zookeeper.enabled }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: zookeeper
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: message-broker
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+spec:
+  serviceName: zookeeper-headless
+  replicas: {{ .Values.zookeeper.replicaCount | default 3 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zookeeper
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zookeeper
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: message-broker
+    spec:
+      serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: zookeeper
+          image: confluentinc/cp-zookeeper:7.5.0
+          ports:
+            - name: zookeeper
+              containerPort: 2181
+              protocol: TCP
+          env:
+            - name: ZOOKEEPER_CLIENT_PORT
+              value: "2181"
+            - name: ZOOKEEPER_TICK_TIME
+              value: "2000"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command:
+                - zookeeper-ready
+                - "2181"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: zookeeper
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: message-broker
+spec:
+  type: ClusterIP
+  ports:
+    - name: zookeeper
+      port: 2181
+      targetPort: zookeeper
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: zookeeper
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper-headless
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: zookeeper
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: message-broker
+spec:
+  clusterIP: None
+  ports:
+    - name: zookeeper
+      port: 2181
+      targetPort: zookeeper
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: zookeeper
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}
+
+{{/* ── Prometheus ─────────────────────────────────────────────────────────── */}}
+{{- if .Values.prometheus.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    scrape_configs:
+      - job_name: "prometheus"
+        static_configs:
+          - targets: ["localhost:9090"]
+      {{/* Scrape all microservices */}}
+      - job_name: "banking-services"
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: keep
+            regex: gateway|authService|accountService|transactionService|fraudService|notificationService
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: monitoring
+    spec:
+      serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.48.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --web.console.libraries=/etc/prometheus/console_libraries
+            - --web.console.templates=/etc/prometheus/consoles
+            - --storage.tsdb.retention.time={{ .Values.prometheus.server.retention | default "15d" }}
+          ports:
+            - name: prometheus
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: prometheus-data
+              mountPath: /prometheus
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config
+        - name: prometheus-data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: monitoring
+spec:
+  type: ClusterIP
+  ports:
+    - name: prometheus
+      port: 9090
+      targetPort: prometheus
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}
+
+{{/* ── Grafana ────────────────────────────────────────────────────────────── */}}
+{{- if .Values.grafana.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: monitoring
+    spec:
+      serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.2.2
+          ports:
+            - name: grafana
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: {{ .Values.grafana.adminUser | default "admin" | quote }}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: grafana-password
+                  optional: true
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: {{ .Values.grafana.disableUsersForm | ternary "false" "true" | quote }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: grafana-data
+              mountPath: /var/lib/grafana
+            - name: grafana-config
+              mountPath: /etc/grafana
+              readOnly: true
+      volumes:
+        - name: grafana-data
+          emptyDir: {}
+        - name: grafana-config
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: monitoring
+spec:
+  type: ClusterIP
+  ports:
+    - name: grafana
+      port: 3000
+      targetPort: grafana
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}

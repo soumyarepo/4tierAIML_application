@@ -1,0 +1,45 @@
+{{/*
+Ingress for the gateway service — the only service exposed externally.
+Configurable host, TLS, and path routing.
+*/}}
+{{- $root := . }}
+{{- $namespace := .Values.global.namespace | default "banking" }}
+{{- $gateway := index .Values "gateway" }}
+{{- if $gateway.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: banking-ingress
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "banking-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    {{- if $gateway.ingress.tls }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
+spec:
+  ingressClassName: {{ $gateway.ingress.className | default "nginx" }}
+  {{- if $gateway.ingress.tls }}
+  tls:
+    - hosts:
+        - {{ $gateway.ingress.host | default "banking.local" }}
+      secretName: {{ $gateway.ingress.tlsSecret | default "banking-ingress-tls" }}
+  {{- end }}
+  rules:
+    - host: {{ $gateway.ingress.host | default "banking.local" }}
+      http:
+        paths:
+          - path: {{ $gateway.ingress.path | default "/" }}
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: {{ $gateway.service.port }}
+{{- end }}

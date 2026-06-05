@@ -1,0 +1,10 @@
+{{- if .Values.global.createNamespace | default true }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.global.namespace | default "banking" }}
+  labels:
+    app.kubernetes.io/name: {{ include "banking-app.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}

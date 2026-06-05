@@ -1,0 +1,1 @@
+"""Notification Service – Event-driven Kafka consumer for banking event notifications."""

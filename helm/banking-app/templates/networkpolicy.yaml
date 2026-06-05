@@ -1,0 +1,90 @@
+{{/*
+NetworkPolicy — restricts network traffic to the minimum required for service communication.
+Allows traffic within the banking namespace, and permits external ingress for monitoring.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: banking-network-policy
+  namespace: {{ .Values.global.namespace | default "banking" }}
+  labels:
+    {{- include "banking-app.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow traffic between services within the namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+        - protocol: TCP
+          port: 8002
+        - protocol: TCP
+          port: 8003
+        - protocol: TCP
+          port: 8004
+        - protocol: TCP
+          port: 8005
+    # Allow Prometheus to scrape metrics
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+        - protocol: TCP
+          port: 8002
+        - protocol: TCP
+          port: 8003
+        - protocol: TCP
+          port: 8004
+        - protocol: TCP
+          port: 8005
+        - protocol: TCP
+          port: 9090
+
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow traffic within the namespace
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432   # PostgreSQL
+        - protocol: TCP
+          port: 6379   # Redis
+        - protocol: TCP
+          port: 27017  # MongoDB
+        - protocol: TCP
+          port: 9092   # Kafka
+        - protocol: TCP
+          port: 29092  # Kafka internal
+        - protocol: TCP
+          port: 2181   # Zookeeper
+        - protocol: TCP
+          port: 9090   # Prometheus
+        - protocol: TCP
+          port: 3000   # Grafana
+    # Allow egress to the internet for pulling images (handled by kubelet)
+    - to:
+        - namespaceSelector: {}

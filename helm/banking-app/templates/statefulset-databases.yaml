@@ -1,0 +1,302 @@
+{{/*
+StatefulSets for stateful database infrastructure:
+  - PostgreSQL
+  - MongoDB
+Both use persistent volume claims and headless services.
+*/}}
+{{- $root := . }}
+{{- $namespace := .Values.global.namespace | default "banking" }}
+{{- $storageClass := .Values.global.storageClass | default "" }}
+
+{{/* ── PostgreSQL ─────────────────────────────────────────────────────────── */}}
+{{- if .Values.postgresql.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "banking-app.labels" $root | nindent 4 }}
+data:
+  init-databases.sql: |
+    CREATE DATABASE bank_auth;
+    CREATE DATABASE bank_accounts;
+    CREATE DATABASE bank_transactions;
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bank-postgres
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: bank-postgres
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+spec:
+  serviceName: bank-postgres-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bank-postgres
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bank-postgres
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: database
+    spec:
+      serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              value: "bankuser"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: postgres-password
+                  optional: true
+            - name: POSTGRES_DB
+              value: "postgres"
+          envFrom:
+            - configMapRef:
+                name: banking-configmap
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "bankuser", "-d", "bank_auth"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "bankuser", "-d", "bank_auth"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: postgres-init
+          configMap:
+            name: postgres-init-scripts
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+        labels:
+          app.kubernetes.io/name: bank-postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size | default "10Gi" }}
+        {{- if $storageClass }}
+        storageClassName: {{ $storageClass }}
+        {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bank-postgres
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: bank-postgres
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: bank-postgres
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bank-postgres-headless
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: bank-postgres
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: database
+spec:
+  clusterIP: None
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: bank-postgres
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}
+
+{{/* ── MongoDB ────────────────────────────────────────────────────────────── */}}
+{{- if .Values.mongodb.enabled }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: bank-mongo
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: bank-mongo
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+spec:
+  serviceName: bank-mongo-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bank-mongo
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bank-mongo
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: database
+    spec:
+      serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: mongodb
+          image: mongo:6
+          ports:
+            - name: mongodb
+              containerPort: 27017
+              protocol: TCP
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: "bankuser"
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: banking-secrets
+                  key: mongo-password
+                  optional: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+        labels:
+          app.kubernetes.io/name: bank-mongo
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.mongodb.persistence.size | default "5Gi" }}
+        {{- if $storageClass }}
+        storageClassName: {{ $storageClass }}
+        {{- end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bank-mongo
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: bank-mongo
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: mongodb
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: bank-mongo
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bank-mongo-headless
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: bank-mongo
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/component: database
+spec:
+  clusterIP: None
+  ports:
+    - name: mongodb
+      port: 27017
+      targetPort: mongodb
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: bank-mongo
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+{{- end }}

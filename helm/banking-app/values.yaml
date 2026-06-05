@@ -1,0 +1,415 @@
+# =============================================================================
+# Global defaults
+# =============================================================================
+global:
+  imageRegistry: ghcr.io
+  imagePullSecrets: []
+  storageClass: ""
+  namespace: banking
+
+# =============================================================================
+# Service-specific configuration
+# All 6 microservices share the same schema
+# =============================================================================
+gateway:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: banking-gateway
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  env:
+    - name: SERVICE_NAME
+      value: "gateway"
+    - name: PORT
+      value: "8000"
+    - name: AUTH_SERVICE_URL
+      value: "http://auth-service:8001"
+    - name: ACCOUNT_SERVICE_URL
+      value: "http://account-service:8002"
+    - name: TRANSACTION_SERVICE_URL
+      value: "http://transaction-service:8003"
+    - name: FRAUD_SERVICE_URL
+      value: "http://fraud-service:8004"
+    - name: NOTIFICATION_SERVICE_URL
+      value: "http://notification-service:8005"
+    - name: REDIS_URL
+      value: "redis://redis:6379"
+    - name: KAFKA_BOOTSTRAP_SERVERS
+      value: "kafka:29092"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  ingress:
+    enabled: true
+    className: nginx
+    host: banking.local
+    path: /
+    tls: true
+    tlsSecret: banking-ingress-tls
+
+authService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: banking-auth-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8001
+  env:
+    - name: SERVICE_NAME
+      value: "auth-service"
+    - name: PORT
+      value: "8001"
+    - name: DATABASE_URL
+      value: "postgresql://bankuser:bankpass@bank-postgres:5432/bank_auth"
+    - name: REDIS_URL
+      value: "redis://redis:6379"
+    - name: JWT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: banking-secrets
+          key: jwt-secret
+          optional: true
+    - name: KAFKA_BOOTSTRAP_SERVERS
+      value: "kafka:29092"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8001
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  ingress:
+    enabled: false
+
+accountService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: banking-account-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8002
+  env:
+    - name: SERVICE_NAME
+      value: "account-service"
+    - name: PORT
+      value: "8002"
+    - name: DATABASE_URL
+      value: "postgresql://bankuser:bankpass@bank-postgres:5432/bank_accounts"
+    - name: REDIS_URL
+      value: "redis://redis:6379"
+    - name: KAFKA_BOOTSTRAP_SERVERS
+      value: "kafka:29092"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8002
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8002
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  ingress:
+    enabled: false
+
+transactionService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: banking-transaction-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8003
+  env:
+    - name: SERVICE_NAME
+      value: "transaction-service"
+    - name: PORT
+      value: "8003"
+    - name: DATABASE_URL
+      value: "postgresql://bankuser:bankpass@bank-postgres:5432/bank_transactions"
+    - name: MONGO_URL
+      value: "mongodb://bankuser:bankpass@bank-mongo:27017"
+    - name: REDIS_URL
+      value: "redis://redis:6379"
+    - name: KAFKA_BOOTSTRAP_SERVERS
+      value: "kafka:29092"
+    - name: FRAUD_SERVICE_URL
+      value: "http://fraud-service:8004"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8003
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8003
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  ingress:
+    enabled: false
+
+fraudService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: banking-fraud-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8004
+  env:
+    - name: SERVICE_NAME
+      value: "fraud-service"
+    - name: PORT
+      value: "8004"
+    - name: REDIS_URL
+      value: "redis://redis:6379"
+    - name: KAFKA_BOOTSTRAP_SERVERS
+      value: "kafka:29092"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8004
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8004
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  ingress:
+    enabled: false
+
+notificationService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: banking-notification-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8005
+  env:
+    - name: SERVICE_NAME
+      value: "notification-service"
+    - name: PORT
+      value: "8005"
+    - name: REDIS_URL
+      value: "redis://redis:6379"
+    - name: KAFKA_BOOTSTRAP_SERVERS
+      value: "kafka:29092"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8005
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8005
+    initialDelaySeconds: 10
+    periodSeconds: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  ingress:
+    enabled: false
+
+# =============================================================================
+# Database infrastructure
+# =============================================================================
+postgresql:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  service:
+    port: 5432
+  # Bitnami PostgreSQL chart values
+  auth:
+    username: bankuser
+    database: bank_auth
+    existingSecret: banking-secrets
+    secretKeys:
+      passwordKey: postgres-password
+
+mongodb:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  service:
+    port: 27017
+  auth:
+    username: bankuser
+    database: bank_transactions
+    existingSecret: banking-secrets
+    secretKeys:
+      passwordKey: mongo-password
+
+redis:
+  enabled: true
+  architecture: standalone
+  service:
+    port: 6379
+  auth:
+    enabled: true
+    existingSecret: banking-secrets
+    secretKeys:
+      passwordKey: redis-password
+
+kafka:
+  enabled: true
+  replicaCount: 3
+  service:
+    ports:
+      internal: 29092
+      external: 9092
+  persistence:
+    enabled: true
+    size: 10Gi
+  kraft:
+    enabled: false
+  zookeeper:
+    enabled: true
+    replicaCount: 3
+
+zookeeper:
+  enabled: true
+  replicaCount: 3
+
+prometheus:
+  enabled: true
+  server:
+    retention: 15d
+  service:
+    port: 9090
+  alertmanager:
+    enabled: false
+
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: ""
+  disableUsersForm: true
+  service:
+    port: 3000
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# =============================================================================
+# Ingress settings
+# =============================================================================
+ingress:
+  enabled: true
+  className: nginx
+  host: banking.local
+  tls:
+    enabled: true
+    secretName: banking-ingress-tls

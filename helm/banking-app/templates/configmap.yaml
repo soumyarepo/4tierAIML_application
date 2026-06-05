@@ -1,0 +1,48 @@
+{{/*
+ConfigMap — holds non-sensitive environment variables and service configuration.
+Sensitive values must go in the banking-secrets Secret.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: banking-configmap
+  namespace: {{ .Values.global.namespace | default "banking" }}
+  labels:
+    {{- include "banking-app.labels" . | nindent 4 }}
+data:
+  # ── Service names ──────────────────────────────────────────────────────────
+  SERVICE_NAME: "banking-app"
+
+  # ── Kafka ──────────────────────────────────────────────────────────────────
+  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers | default "kafka:29092" | quote }}
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  REDIS_URL: {{ .Values.config.redisUrl | default "redis://redis:6379" | quote }}
+
+  # ── MongoDB ────────────────────────────────────────────────────────────────
+  MONGO_URL: {{ .Values.config.mongoUrl | default "mongodb://bank-mongo:27017" | quote }}
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  POSTGRES_HOST: {{ .Values.config.postgresHost | default "bank-postgres" | quote }}
+  POSTGRES_PORT: {{ .Values.config.postgresPort | default "5432" | quote }}
+  POSTGRES_DB_AUTH: {{ .Values.config.postgresDbAuth | default "bank_auth" | quote }}
+  POSTGRES_DB_ACCOUNTS: {{ .Values.config.postgresDbAccounts | default "bank_accounts" | quote }}
+  POSTGRES_DB_TRANSACTIONS: {{ .Values.config.postgresDbTransactions | default "bank_transactions" | quote }}
+
+  # ── Upstream service URLs (gateway routes to these) ────────────────────────
+  AUTH_SERVICE_URL: "http://auth-service:8001"
+  ACCOUNT_SERVICE_URL: "http://account-service:8002"
+  TRANSACTION_SERVICE_URL: "http://transaction-service:8003"
+  FRAUD_SERVICE_URL: "http://fraud-service:8004"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:8005"
+
+  # ── Application settings ───────────────────────────────────────────────────
+  LOG_LEVEL: {{ .Values.config.logLevel | default "INFO" | quote }}
+  ENVIRONMENT: {{ .Values.config.environment | default "production" | quote }}
+
+  # ── Rate limiting ──────────────────────────────────────────────────────────
+  RATE_LIMIT_REQUESTS: {{ .Values.config.rateLimitRequests | default "100" | quote }}
+  RATE_LIMIT_WINDOW_SECONDS: {{ .Values.config.rateLimitWindowSeconds | default "60" | quote }}
+
+  # ── Fraud service thresholds ───────────────────────────────────────────────
+  FRAUD_HIGH_RISK_THRESHOLD: {{ .Values.config.fraudHighRiskThreshold | default "70" | quote }}
