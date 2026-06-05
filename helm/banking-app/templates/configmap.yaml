@@ -10,39 +10,30 @@ metadata:
   labels:
     {{- include "banking-app.labels" . | nindent 4 }}
 data:
-  # ── Service names ──────────────────────────────────────────────────────────
   SERVICE_NAME: "banking-app"
 
-  # ── Kafka ──────────────────────────────────────────────────────────────────
-  KAFKA_BOOTSTRAP_SERVERS: {{ .Values.config.kafkaBootstrapServers | default "kafka:29092" | quote }}
+  KAFKA_BOOTSTRAP_SERVERS: {{ dig "config" "kafkaBootstrapServers" "kafka:29092" .Values | quote }}
 
-  # ── Redis ──────────────────────────────────────────────────────────────────
-  REDIS_URL: {{ .Values.config.redisUrl | default "redis://redis:6379" | quote }}
+  REDIS_URL: {{ dig "config" "redisUrl" "redis://redis:6379" .Values | quote }}
 
-  # ── MongoDB ────────────────────────────────────────────────────────────────
-  MONGO_URL: {{ .Values.config.mongoUrl | default "mongodb://bank-mongo:27017" | quote }}
+  MONGO_URL: {{ dig "config" "mongoUrl" "mongodb://bank-mongo:27017" .Values | quote }}
 
-  # ── PostgreSQL ─────────────────────────────────────────────────────────────
-  POSTGRES_HOST: {{ .Values.config.postgresHost | default "bank-postgres" | quote }}
-  POSTGRES_PORT: {{ .Values.config.postgresPort | default "5432" | quote }}
-  POSTGRES_DB_AUTH: {{ .Values.config.postgresDbAuth | default "bank_auth" | quote }}
-  POSTGRES_DB_ACCOUNTS: {{ .Values.config.postgresDbAccounts | default "bank_accounts" | quote }}
-  POSTGRES_DB_TRANSACTIONS: {{ .Values.config.postgresDbTransactions | default "bank_transactions" | quote }}
+  POSTGRES_HOST: {{ dig "config" "postgresHost" "bank-postgres" .Values | quote }}
+  POSTGRES_PORT: {{ dig "config" "postgresPort" "5432" .Values | quote }}
+  POSTGRES_DB_AUTH: {{ dig "config" "postgresDbAuth" "bank_auth" .Values | quote }}
+  POSTGRES_DB_ACCOUNTS: {{ dig "config" "postgresDbAccounts" "bank_accounts" .Values | quote }}
+  POSTGRES_DB_TRANSACTIONS: {{ dig "config" "postgresDbTransactions" "bank_transactions" .Values | quote }}
 
-  # ── Upstream service URLs (gateway routes to these) ────────────────────────
   AUTH_SERVICE_URL: "http://auth-service:8001"
   ACCOUNT_SERVICE_URL: "http://account-service:8002"
   TRANSACTION_SERVICE_URL: "http://transaction-service:8003"
   FRAUD_SERVICE_URL: "http://fraud-service:8004"
   NOTIFICATION_SERVICE_URL: "http://notification-service:8005"
 
-  # ── Application settings ───────────────────────────────────────────────────
-  LOG_LEVEL: {{ .Values.config.logLevel | default "INFO" | quote }}
-  ENVIRONMENT: {{ .Values.config.environment | default "production" | quote }}
+  LOG_LEVEL: {{ dig "config" "logLevel" "INFO" .Values | quote }}
+  ENVIRONMENT: {{ dig "config" "environment" "production" .Values | quote }}
 
-  # ── Rate limiting ──────────────────────────────────────────────────────────
-  RATE_LIMIT_REQUESTS: {{ .Values.config.rateLimitRequests | default "100" | quote }}
-  RATE_LIMIT_WINDOW_SECONDS: {{ .Values.config.rateLimitWindowSeconds | default "60" | quote }}
+  RATE_LIMIT_REQUESTS: {{ dig "config" "rateLimitRequests" "100" .Values | quote }}
+  RATE_LIMIT_WINDOW_SECONDS: {{ dig "config" "rateLimitWindowSeconds" "60" .Values | quote }}
 
-  # ── Fraud service thresholds ───────────────────────────────────────────────
-  FRAUD_HIGH_RISK_THRESHOLD: {{ .Values.config.fraudHighRiskThreshold | default "70" | quote }}
+  FRAUD_HIGH_RISK_THRESHOLD: {{ dig "config" "fraudHighRiskThreshold" "70" .Values | quote }}

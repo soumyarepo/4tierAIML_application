@@ -8,8 +8,29 @@ global:
   namespace: banking
 
 # =============================================================================
-# Service-specific configuration
-# All 6 microservices share the same schema
+# Shared ConfigMap values
+# =============================================================================
+config:
+  kafkaBootstrapServers: "kafka:29092"
+  redisUrl: "redis://redis:6379"
+  mongoUrl: "mongodb://bank-mongo:27017"
+
+  postgresHost: "bank-postgres"
+  postgresPort: "5432"
+  postgresDbAuth: "bank_auth"
+  postgresDbAccounts: "bank_accounts"
+  postgresDbTransactions: "bank_transactions"
+
+  logLevel: "INFO"
+  environment: "production"
+
+  rateLimitRequests: "100"
+  rateLimitWindowSeconds: "60"
+
+  fraudHighRiskThreshold: "70"
+
+# =============================================================================
+# Gateway service
 # =============================================================================
 gateway:
   enabled: true
@@ -99,30 +120,6 @@ authService:
           optional: true
     - name: KAFKA_BOOTSTRAP_SERVERS
       value: "kafka:29092"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: 8001
-    initialDelaySeconds: 30
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: 8001
-    initialDelaySeconds: 10
-    periodSeconds: 5
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
   ingress:
     enabled: false
 
@@ -147,30 +144,6 @@ accountService:
       value: "redis://redis:6379"
     - name: KAFKA_BOOTSTRAP_SERVERS
       value: "kafka:29092"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: 8002
-    initialDelaySeconds: 30
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: 8002
-    initialDelaySeconds: 10
-    periodSeconds: 5
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
   ingress:
     enabled: false
 
@@ -199,30 +172,6 @@ transactionService:
       value: "kafka:29092"
     - name: FRAUD_SERVICE_URL
       value: "http://fraud-service:8004"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: 8003
-    initialDelaySeconds: 30
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: 8003
-    initialDelaySeconds: 10
-    periodSeconds: 5
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
   ingress:
     enabled: false
 
@@ -245,30 +194,6 @@ fraudService:
       value: "redis://redis:6379"
     - name: KAFKA_BOOTSTRAP_SERVERS
       value: "kafka:29092"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: 8004
-    initialDelaySeconds: 30
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: 8004
-    initialDelaySeconds: 10
-    periodSeconds: 5
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
   ingress:
     enabled: false
 
@@ -291,30 +216,6 @@ notificationService:
       value: "redis://redis:6379"
     - name: KAFKA_BOOTSTRAP_SERVERS
       value: "kafka:29092"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: 8005
-    initialDelaySeconds: 30
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: 8005
-    initialDelaySeconds: 10
-    periodSeconds: 5
-  autoscaling:
-    enabled: true
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
   ingress:
     enabled: false
 
@@ -329,7 +230,6 @@ postgresql:
     storageClass: ""
   service:
     port: 5432
-  # Bitnami PostgreSQL chart values
   auth:
     username: bankuser
     database: bank_auth
@@ -414,6 +314,9 @@ ingress:
     enabled: true
     secretName: banking-ingress-tls
 
+# =============================================================================
+# Secrets values
+# =============================================================================
 secrets:
   jwtSecret: ""
   postgresPassword: "bankpass"
