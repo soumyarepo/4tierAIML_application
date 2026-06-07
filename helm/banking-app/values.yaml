@@ -265,7 +265,7 @@ redis:
 
 kafka:
   enabled: true
-  replicaCount: 3
+  replicaCount: 1
   service:
     ports:
       internal: 29092

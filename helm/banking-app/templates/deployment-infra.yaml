@@ -119,7 +119,7 @@ metadata:
     app.kubernetes.io/managed-by: {{ $root.Release.Service }}
 spec:
   serviceName: kafka-headless
-  replicas: {{ .Values.kafka.replicaCount | default 3 }}
+  replicas: {{ .Values.kafka.replicaCount | default 1 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: kafka
@@ -132,11 +132,13 @@ spec:
         app.kubernetes.io/component: message-broker
     spec:
       serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      # Disable Kubernetes service environment variables like KAFKA_PORT.
+      # Confluent Kafka treats KAFKA_PORT as deprecated and exits.
+      enableServiceLinks: false
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
       containers:
         - name: kafka
           image: confluentinc/cp-kafka:7.5.0
@@ -149,26 +151,24 @@ spec:
               protocol: TCP
           env:
             - name: KAFKA_BROKER_ID
-              value: "$(POD_NUMBER)"
+              value: "1"
             - name: KAFKA_ZOOKEEPER_CONNECT
               value: "zookeeper:2181"
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://0.0.0.0:9092"
             - name: KAFKA_ADVERTISED_LISTENERS
-              value: "PLAINTEXT://kafka-$(POD_NUMBER).kafka-headless:29092,PLAINTEXT_HOST://localhost:9092"
+              value: "PLAINTEXT://kafka-0.kafka-headless.banking.svc.cluster.local:9092"
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+              value: "PLAINTEXT:PLAINTEXT"
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: "PLAINTEXT"
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
             - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
               value: "true"
-            - name: POD_NUMBER
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-          envFrom:
-            - configMapRef:
-                name: banking-configmap
+            # Do not use envFrom banking-configmap here.
+            # If that ConfigMap contains PORT, Confluent Kafka exits with:
+            # "port is deprecated. Please use KAFKA_ADVERTISED_LISTENERS instead."
           resources:
             requests:
               cpu: 250m
@@ -177,18 +177,22 @@ spec:
               cpu: "1"
               memory: 2Gi
           livenessProbe:
-            exec:
-              command:
-                - kafka-broker-api-versions
-                - --bootstrap-server
-                - localhost:9092
-            initialDelaySeconds: 30
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 120
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            readOnlyRootFilesystem: false
           volumeMounts:
             - name: kafka-data
               mountPath: /var/lib/kafka/data
@@ -268,7 +272,7 @@ metadata:
     app.kubernetes.io/managed-by: {{ $root.Release.Service }}
 spec:
   serviceName: zookeeper-headless
-  replicas: {{ .Values.zookeeper.replicaCount | default 3 }}
+  replicas: {{ .Values.zookeeper.replicaCount | default 1 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: zookeeper
@@ -281,10 +285,11 @@ spec:
         app.kubernetes.io/component: message-broker
     spec:
       serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
+      enableServiceLinks: false
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
       containers:
         - name: zookeeper
           image: confluentinc/cp-zookeeper:7.5.0
@@ -305,17 +310,22 @@ spec:
               cpu: 500m
               memory: 512Mi
           livenessProbe:
-            exec:
-              command:
-                - zookeeper-ready
-                - "2181"
+            tcpSocket:
+              port: 2181
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            tcpSocket:
+              port: 2181
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            readOnlyRootFilesystem: false
 
 ---
 apiVersion: v1
@@ -513,10 +523,9 @@ spec:
     spec:
       serviceAccountName: {{ include "banking-app.serviceAccountName" $root }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        runAsGroup: 65534
-        fsGroup: 65534
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
       containers:
         - name: grafana
           image: grafana/grafana:10.2.2
@@ -544,19 +553,12 @@ spec:
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+            readOnlyRootFilesystem: false
           volumeMounts:
             - name: grafana-data
               mountPath: /var/lib/grafana
-            - name: grafana-config
-              mountPath: /etc/grafana
-              readOnly: true
       volumes:
         - name: grafana-data
-          emptyDir: {}
-        - name: grafana-config
           emptyDir: {}
 
 ---
