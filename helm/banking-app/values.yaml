@@ -38,7 +38,7 @@ gateway:
   image:
     repository: soumyakube/gateway
     tag: "latest"
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     type: ClusterIP
     port: 8000
