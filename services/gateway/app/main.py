@@ -41,6 +41,29 @@ app_state: dict[str, Any] = {
 
 
 # =============================================================================
+# FastAPI App Creation
+# =============================================================================
+
+app = FastAPI(
+    title="Banking API Gateway",
+    description="Tier 1 API Gateway for the four-tier banking microservices architecture",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+setup_metrics(app)
+
+
+# =============================================================================
 # Error Response Models
 # =============================================================================
 
@@ -470,43 +493,3 @@ async def shutdown_event() -> None:
         await app_state["redis_client"].aclose()
 
     logger.info("gateway_stopped")
-
-
-# =============================================================================
-# App Creation
-# =============================================================================
-
-
-def create_app() -> FastAPI:
-    """Create and configure the FastAPI application.
-
-    Returns:
-        Configured FastAPI application instance.
-    """
-    app = FastAPI(
-        title="Banking API Gateway",
-        description="Tier 1 API Gateway for the four-tier banking microservices architecture",
-        version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
-    )
-
-    # CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # Prometheus metrics
-    setup_metrics(app)
-
-    # Include all routes from this module
-    app.include_router(app.router)
-
-    return app
-
-
-app = create_app()
